@@ -7,7 +7,9 @@ orders agent still calls the store over HTTP with the forwarded token. Nothing
 is imported across the service boundary at call time.
 """
 
+import asyncio
 import contextlib
+import contextvars
 from dataclasses import dataclass
 from typing import AsyncIterator
 
@@ -32,7 +34,10 @@ class HostRoutingTransport(httpx.AsyncBaseTransport):
         transport = self._transports.get(request.url.host)
         if transport is None:
             raise httpx.ConnectError(f"no in-process app for host {request.url.host!r}", request=request)
-        return await transport.handle_async_request(request)
+        # Run the callee in an EMPTY context, like a separate process: nothing
+        # (bearer token, identity, LangChain callbacks) leaks across the "network"
+        # except what is actually sent in the HTTP request.
+        return await asyncio.create_task(transport.handle_async_request(request), context=contextvars.Context())
 
 
 @dataclass
@@ -43,7 +48,7 @@ class Stack:
     store_app: object
 
 
-def test_settings(**overrides) -> Settings:
+def make_test_settings(**overrides) -> Settings:
     base = dict(
         llm_provider="fake",
         store_api_url=STORE_URL,
@@ -64,7 +69,7 @@ async def running_stack(settings: Settings | None = None, store_app=None) -> Asy
     from shophub.orders_agent.server import create_app as create_orders_agent
     from shophub.store_api.app import create_app as create_store
 
-    settings = settings or test_settings()
+    settings = settings or make_test_settings()
     store_app = store_app or create_store()  # pass the same one to simulate a restart of the agents only
     transport = HostRoutingTransport({"store": store_app})
     async with httpx.AsyncClient(transport=transport, timeout=30) as http:

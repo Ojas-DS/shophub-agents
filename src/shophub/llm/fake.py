@@ -82,10 +82,7 @@ class ScriptedChatModel(BaseChatModel):
             )
             return
         for piece in re.findall(r"\S+\s*|\s+", msg.text):
-            chunk = ChatGenerationChunk(message=AIMessageChunk(content=piece))
-            if run_manager:
-                run_manager.on_llm_new_token(piece, chunk=chunk)
-            yield chunk
+            yield ChatGenerationChunk(message=AIMessageChunk(content=piece))
 
 
 # ----------------------------------------------------------------------------

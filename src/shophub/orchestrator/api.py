@@ -41,7 +41,7 @@ from shophub.common.request_context import (
 )
 from shophub.config import Settings
 from shophub.llm.factory import make_chat_model
-from shophub.orchestrator.graph import build_orchestrator_graph
+from shophub.orchestrator.graph import ANSWER_TAG, build_orchestrator_graph
 from shophub.orchestrator.registry import AgentRegistry
 
 log = logging.getLogger("orchestrator.api")
@@ -152,7 +152,7 @@ def create_app(settings: Settings, http: httpx.AsyncClient | None = None) -> Fas
                 inputs = {"messages": [HumanMessage(redact_pii(body.message))]}
                 async for ev in graph.astream_events(inputs, config, version="v2"):
                     kind = ev["event"]
-                    if kind == "on_chat_model_stream":
+                    if kind == "on_chat_model_stream" and ANSWER_TAG in ev.get("tags", []):
                         piece = ev["data"]["chunk"].text
                         if piece:
                             yield sse("token", {"text": piece})

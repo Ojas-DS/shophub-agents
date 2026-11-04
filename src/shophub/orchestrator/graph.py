@@ -31,6 +31,9 @@ from shophub.orchestrator.prompts import ORCHESTRATOR_SYSTEM_PROMPT, describe_ag
 from shophub.orchestrator.registry import AgentRegistry
 
 
+ANSWER_TAG = "orchestrator_answer"
+
+
 class PendingTask(TypedDict):
     agent_tool: str
     task_id: str
@@ -60,7 +63,8 @@ def build_orchestrator_graph(model: BaseChatModel, registry: AgentRegistry, chec
             agents=describe_agents(registry.agents),
         ))
         llm = model.bind_tools(registry.tools()) if registry.agents else model
-        response = await llm.ainvoke([system, *state["messages"]])
+        # The tag lets the chat API stream only THIS model's tokens to the user.
+        response = await llm.ainvoke([system, *state["messages"]], config={"tags": [ANSWER_TAG]})
         return {"messages": [response]}
 
     def route_entry(state: OrchestratorState) -> Literal["resume_remote", "agent"]:
