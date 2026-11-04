@@ -21,7 +21,7 @@ def send(base: str, token: str, thread: str, message: str) -> None:
         if resp.status_code != 200:
             print(f"HTTP {resp.status_code}: {resp.read().decode()}")
             return
-        event = None
+        event, streamed = None, False
         for line in resp.iter_lines():
             if line.startswith("event: "):
                 event = line[7:]
@@ -29,11 +29,14 @@ def send(base: str, token: str, thread: str, message: str) -> None:
                 data = json.loads(line[6:])
                 if event == "token":
                     print(data["text"], end="", flush=True)        # tokens as they are produced
+                    streamed = True
                 elif event == "final":
+                    if not streamed:  # deterministic replies (proposal / approval result) are not LLM tokens
+                        print(data["text"])
                     flag = "  [awaiting your approval]" if data["awaiting_approval"] else ""
                     print(f"\n--- final{flag} ---")
                 elif event == "proposal":
-                    print(f"\n[proposal] {json.dumps(data['proposal'])}\n{data['text']}")
+                    print(f"[proposal] {json.dumps(data['proposal'])}")
                 else:
                     print(f"[{event}] {json.dumps(data)}")
 

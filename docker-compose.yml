@@ -1,0 +1,73 @@
+# docker compose up --build
+#   store API      http://localhost:8000
+#   orders agent   http://localhost:8001   (A2A: /.well-known/agent-card.json, JSON-RPC at /)
+#   orchestrator   http://localhost:8002   (POST /chat, SSE)
+#   postgres       checkpoints for both agents + A2A task store
+#
+# LLM_PROVIDER defaults to "fake" so this runs with no API key.
+# For the real model: LLM_PROVIDER=anthropic ANTHROPIC_API_KEY=... docker compose up
+
+x-app: &app
+  build: .
+  image: shophub-agents:latest
+  restart: unless-stopped
+  environment: &env
+    LLM_PROVIDER: ${LLM_PROVIDER:-fake}
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-haiku-4-5}
+    LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    STORE_API_URL: http://store-api:8000
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: shophub
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-shophub-local-dev}
+      POSTGRES_DB: orchestrator
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shophub -d orchestrator"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  store-api:
+    <<: *app
+    command: ["python", "-m", "shophub.store_api"]
+    environment:
+      <<: *env
+      PORT: "8000"
+    ports: ["8000:8000"]
+
+  orders-agent:
+    <<: *app
+    command: ["python", "-m", "shophub.orders_agent"]
+    environment:
+      <<: *env
+      PORT: "8001"
+      ORDERS_AGENT_PUBLIC_URL: http://orders-agent:8001/
+      ORDERS_AGENT_DB_URL: postgresql://shophub:${POSTGRES_PASSWORD:-shophub-local-dev}@postgres:5432/orders_agent
+      A2A_TASK_STORE_URL: postgresql+asyncpg://shophub:${POSTGRES_PASSWORD:-shophub-local-dev}@postgres:5432/orders_agent
+    ports: ["8001:8001"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      store-api: {condition: service_healthy}
+
+  orchestrator:
+    <<: *app
+    command: ["python", "-m", "shophub.orchestrator"]
+    environment:
+      <<: *env
+      PORT: "8002"
+      AGENT_CARD_URLS: http://orders-agent:8001
+      ORCHESTRATOR_DB_URL: postgresql://shophub:${POSTGRES_PASSWORD:-shophub-local-dev}@postgres:5432/orchestrator
+    ports: ["8002:8002"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      orders-agent: {condition: service_healthy}
+
+volumes:
+  pgdata:
