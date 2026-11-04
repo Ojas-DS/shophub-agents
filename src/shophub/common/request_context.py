@@ -29,6 +29,10 @@ class Identity:
     merchant_name: str
 
 
+# Set after the token was validated against the store's /auth/me for THIS request.
+current_identity: ContextVar[Identity | None] = ContextVar("current_identity", default=None)
+
+
 def outbound_headers() -> dict[str, str]:
     """Headers for any downstream call: the caller's own token + correlation id.
 
