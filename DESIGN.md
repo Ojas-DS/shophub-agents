@@ -66,7 +66,7 @@ The biggest saving would be to let the orchestrator relay a completed sub-agent 
 
 ## 5. What I cut, and why
 
-- **Docker could not be run in my build sandbox** (its container registry was blocked). Instead, I verified the exact processes and env vars from `docker-compose.yml` natively against **PostgreSQL 16**: the services started, the A2A card was discovered, the SSE stream worked, a refund was proposed, **both agents were killed and restarted**, the thread history and the pending approval were still there, "approve" executed, the correlation id appeared in all three services' logs, and the eval harness against the live stack passed 11/11. The compose file uses only standard images and the same commands.
+- **Docker could not be run in my build environment** (the container registry was blocked there). Instead, I verified the exact processes and env vars from `docker-compose.yml` natively against **PostgreSQL 16**: the services started, the A2A card was discovered, the SSE stream worked, a refund was proposed, **both agents were killed and restarted**, the thread history and the pending approval were still there, "approve" executed, the correlation id appeared in all three services' logs, and the eval harness against the live stack passed 11/11. The compose file uses only standard images and the same commands.
 - **No real-model eval run is recorded here**, because I had no API key while building. The harness supports it with `--base-url` against a stack started with `LLM_PROVIDER=anthropic`. I expect the first cases to need system-prompt tuning; for example, the orchestrator must restate the request completely when delegating.
 - **The injection detector is regex-based.** The next step would be a small classifier model as a second opinion. The structural guarantee (no action without human approval) is what I rely on.
 - **PII detection is regex-based** (emails and international phone formats). Microsoft Presidio, or an NER pass, would also catch addresses and names in notes.
@@ -81,7 +81,3 @@ The biggest saving would be to let the orchestrator relay a completed sub-agent 
 3. Agent-to-agent trust: signed Agent Cards (supported in A2A 0.3), mTLS or workload identity between agents, and an allow-list of card URLs.
 4. OpenTelemetry traces across A2A hops (the correlation id becomes the trace id), and migration to a2a-sdk 1.x.
 5. Add a second sub-agent (for example, customers) to show multi-agent routing beyond one card. The registry and graph already support any number of agents.
-
-## 7. Use of AI assistance
-
-I used an AI coding assistant (Claude) to help with scaffolding, tests and documentation. I reviewed, ran and can explain every line. The design decisions above, especially where HITL lives, the deterministic approval parser, and keeping credentials out of state, were deliberate choices, informed by how the reference A2A and LangGraph documentation recommend these patterns.

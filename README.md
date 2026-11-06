@@ -14,7 +14,7 @@ client ──SSE──► Orchestrator ──A2A JSON-RPC (message/stream)──
           the caller's bearer token is forwarded unchanged on every hop ─────────────────────────►
 ```
 
-Architecture, trade-offs, what was cut, and cost/latency are in [DESIGN.md](DESIGN.md). A file-by-file and line-by-line guide is in [docs/CODE_WALKTHROUGH.md](docs/CODE_WALKTHROUGH.md).
+Architecture, trade-offs, what was cut, and cost/latency are in [DESIGN.md](DESIGN.md).
 
 ## Quick start (Docker, no API key)
 
@@ -104,5 +104,5 @@ src/shophub/
   orders_agent/             A2A server: agent card, auth/tenant security, executor, LangGraph + approval gate, tools
   orchestrator/             agent registry (discovery + A2A client), LangGraph, SSE chat API
   testing.py                in-process 3-service stack for tests/evals
-tests/  evals/  scripts/  docker/  docs/
+tests/  evals/  scripts/  docker/
 ```
