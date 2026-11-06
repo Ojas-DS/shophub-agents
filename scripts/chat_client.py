@@ -1,10 +1,3 @@
-"""Tiny SSE client for the chat API (R6). Prints events as they arrive.
-
-  python scripts/chat_client.py "Refund order 1042" --thread demo
-  python scripts/chat_client.py "approve" --thread demo
-  python scripts/chat_client.py --interactive --thread demo
-"""
-
 import argparse
 import json
 import sys
@@ -28,10 +21,10 @@ def send(base: str, token: str, thread: str, message: str) -> None:
             elif line.startswith("data: "):
                 data = json.loads(line[6:])
                 if event == "token":
-                    print(data["text"], end="", flush=True)        # tokens as they are produced
+                    print(data["text"], end="", flush=True)
                     streamed = True
                 elif event == "final":
-                    if not streamed:  # deterministic replies (proposal / approval result) are not LLM tokens
+                    if not streamed:
                         print(data["text"])
                     flag = "  [awaiting your approval]" if data["awaiting_approval"] else ""
                     print(f"\n--- final{flag} ---")

@@ -1,13 +1,3 @@
-"""R9 - mini evaluation harness. Reports PASS/FAIL per case (no blended score).
-
-Default: fake LLM, whole stack in-process, fresh store per case. No key, no network.
-    python -m evals.run_evals
-
-Against a running stack (e.g. docker compose with LLM_PROVIDER=anthropic):
-    python -m evals.run_evals --base-url http://localhost:8002 --store-url http://localhost:8000
-  (cases mutate orders, so run that against a freshly started stack.)
-"""
-
 import argparse
 import asyncio
 import contextlib
@@ -42,7 +32,6 @@ def parse_sse(body: str) -> list[tuple[str, dict]]:
 
 async def check_turn(chat_client: httpx.AsyncClient, store_client: httpx.AsyncClient, store_url: str,
                      thread: str, turn: dict[str, Any]) -> list[str]:
-    """Run one turn; return a list of failure reasons (empty = pass)."""
     exp, failures = turn["expect"], []
     resp = await chat_client.post("/chat", json={"message": turn["message"], "thread_id": thread},
                                   headers={"Authorization": TOKENS[turn["token"]]})
@@ -91,7 +80,7 @@ async def run_case(case: dict, base_url: str | None, store_url: str | None) -> t
             chat = await stack.enter_async_context(httpx.AsyncClient(base_url=base_url, timeout=120))
             store, s_url = chat, store_url
         else:
-            s = await stack.enter_async_context(running_stack())  # fresh store + agents per case
+            s = await stack.enter_async_context(running_stack())
             chat, store, s_url = s.client, s.http, s.settings.store_api_url
         failures: list[str] = []
         for i, turn in enumerate(case["turns"], 1):
@@ -108,7 +97,7 @@ async def main() -> int:
     ap.add_argument("--store-url", default="http://localhost:8000")
     ap.add_argument("--only", help="run a single case id")
     args = ap.parse_args()
-    logging.basicConfig(level=logging.ERROR)  # keep the report readable
+    logging.basicConfig(level=logging.ERROR)
 
     cases = [c for c in json.loads(CASES.read_text()) if not args.only or c["id"] == args.only]
     mode = f"live stack at {args.base_url}" if args.base_url else "in-process, fake LLM"

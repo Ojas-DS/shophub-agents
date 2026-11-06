@@ -1,5 +1,3 @@
-"""Unit tests: store API contract, legacy envelope (respx), approval parser."""
-
 import httpx
 import pytest
 import respx
@@ -11,7 +9,6 @@ from shophub.orders_agent.store_client import StoreClient, StoreError
 from shophub.store_api.app import create_app
 
 
-# ---- store API --------------------------------------------------------------
 @pytest.fixture
 def store():
     return TestClient(create_app())
@@ -33,12 +30,12 @@ def test_store_scoping_and_status_codes(store):
     assert {o["status"] for o in store.get("/orders?status=PAID", headers=a).json()} == {"PAID"}
     assert store.get("/orders", headers=h("platform-auditor-token")).status_code == 403
     assert store.get("/orders/lookup?id=2001", headers=a).json() == {"status": False, "message": "Order not found"}
-    assert store.get("/orders/lookup?id=2001", headers=a).status_code == 200  # legacy: always 200
-    assert store.post("/orders/refund", json={"id": 2001}, headers=a).status_code == 404  # foreign
-    assert store.post("/orders/refund", json={"id": 9999}, headers=a).status_code == 404  # unknown
-    assert store.post("/orders/cancel", json={"id": 1002}, headers=a).status_code == 409  # DELIVERED
+    assert store.get("/orders/lookup?id=2001", headers=a).status_code == 200
+    assert store.post("/orders/refund", json={"id": 2001}, headers=a).status_code == 404
+    assert store.post("/orders/refund", json={"id": 9999}, headers=a).status_code == 404
+    assert store.post("/orders/cancel", json={"id": 1002}, headers=a).status_code == 409
     assert store.post("/orders/refund", json={"id": 1001}, headers=a).json()["status"] == "REFUNDED"
-    assert store.post("/orders/refund", json={"id": 1001}, headers=a).status_code == 409  # twice
+    assert store.post("/orders/refund", json={"id": 1001}, headers=a).status_code == 409
 
 
 def test_seed_has_required_shape():
@@ -51,7 +48,6 @@ def test_seed_has_required_shape():
     assert any(u.merchant_id is None for u in TOKENS.values())
 
 
-# ---- legacy envelope, mocked with respx -----------------------------------------
 @respx.mock
 async def test_store_client_treats_200_status_false_as_failure():
     respx.get("http://store/orders/lookup").mock(
@@ -82,7 +78,6 @@ async def test_store_client_refuses_to_call_without_credential():
             await StoreClient("http://store", http).list_orders()
 
 
-# ---- approval parser ----------------------------------------------------------------
 @pytest.mark.parametrize("reply,expected", [
     ("approve", "approve"), ("Approved", "approve"), ("yes, go ahead", "approve"), ("ok do it", "approve"),
     ("reject", "reject"), ("no", "reject"), ("don't do that", "reject"), ("no, do not approve", "reject"),

@@ -1,5 +1,3 @@
-"""The ONE place a chat model is created. Swap provider via LLM_PROVIDER."""
-
 from typing import Literal
 
 from langchain_core.language_models import BaseChatModel
@@ -10,12 +8,6 @@ AgentRole = Literal["orchestrator", "orders_agent"]
 
 
 def make_chat_model(role: AgentRole, settings: Settings) -> BaseChatModel:
-    """Return a LangChain chat model for an agent role.
-
-    fake      -> deterministic scripted model (no key, no network). Each role gets
-                 its own policy, because the two agents have different jobs.
-    anthropic -> ChatAnthropic; needs ANTHROPIC_API_KEY in the environment.
-    """
     if settings.llm_provider == "fake":
         from shophub.llm.fake import ScriptedChatModel, orchestrator_policy, orders_agent_policy
 

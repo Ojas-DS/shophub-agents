@@ -1,5 +1,3 @@
-"""Data structures for the mock store. Every seed value has an explicit type."""
-
 from datetime import datetime
 from enum import Enum
 
@@ -15,9 +13,6 @@ class OrderStatus(str, Enum):
     REFUNDED = "REFUNDED"
 
 
-# The order state machine: which actions are legal from which states.
-# The store enforces this (409 otherwise); the agent pre-checks it only to give
-# a better message, the store stays the source of truth.
 REFUNDABLE: frozenset[OrderStatus] = frozenset(
     {OrderStatus.PAID, OrderStatus.SHIPPED, OrderStatus.DELIVERED}
 )
@@ -30,15 +25,13 @@ class Merchant(BaseModel):
 
 
 class StaffUser(BaseModel):
-    """What a bearer token resolves to. merchant_id=None => platform user."""
-
     user: str
     merchant_id: str | None
 
 
 class Order(BaseModel):
     id: int
-    merchant: str  # merchant id, e.g. "merchant_a"
+    merchant: str
     customer_name: str
     customer_email: str
     customer_phone: str
@@ -49,6 +42,4 @@ class Order(BaseModel):
 
 
 class OrderAction(BaseModel):
-    """Body of POST /orders/refund and /orders/cancel."""
-
     id: int

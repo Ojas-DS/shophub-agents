@@ -1,14 +1,3 @@
-"""Typed client for the store API, used only by the orders agent.
-
-Two rules live here:
-  * Every call sends the CALLER's own Authorization header, unchanged
-    (`outbound_headers()` reads it from the request context). This client has
-    no credentials of its own and cannot mint or elevate one (R3).
-  * Every failure becomes a `StoreError` with a human-readable message,
-    including the legacy `200 + {"status": false}` envelope (R1). The HTTP
-    status code alone is never trusted to mean success.
-"""
-
 from typing import Any
 
 import httpx
@@ -31,7 +20,7 @@ class StoreClient:
     async def _request(self, method: str, path: str, **kw: Any) -> Any:
         try:
             resp = await self._http.request(method, f"{self._base}{path}", headers=outbound_headers(), **kw)
-        except httpx.HTTPError as exc:  # timeouts, connection refused, ...
+        except httpx.HTTPError as exc:
             raise StoreError(f"The store service is unreachable ({type(exc).__name__}).", "unavailable") from exc
 
         if resp.status_code == 401:
@@ -55,7 +44,6 @@ class StoreClient:
 
     async def lookup_order(self, order_id: int) -> dict[str, Any]:
         body = await self._request("GET", "/orders/lookup", params={"id": order_id})
-        # LEGACY ENVELOPE: HTTP 200 does not mean success. Check the body.
         if not isinstance(body, dict) or body.get("status") is not True or "order" not in body:
             message = body.get("message", "Order not found") if isinstance(body, dict) else "Unexpected response"
             raise StoreError(f"Order {order_id}: {message} in your store.", "not_found")

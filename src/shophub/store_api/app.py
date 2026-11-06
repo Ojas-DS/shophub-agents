@@ -1,9 +1,3 @@
-"""R0 - the mock ShopHub store API. In-memory, deliberately tiny.
-
-Every endpoint is scoped to the caller's merchant. Tenant isolation is enforced
-HERE, at the data layer, so it holds no matter what any agent does.
-"""
-
 import logging
 from typing import Annotated
 
@@ -25,7 +19,6 @@ log = logging.getLogger("store_api")
 
 def create_app() -> FastAPI:
     app = FastAPI(title="ShopHub Mock Store API", version="1.0.0")
-    # Per-app state: every create_app() starts from clean seed data (tests rely on it).
     orders: dict[int, Order] = build_orders()
 
     @app.middleware("http")
@@ -39,9 +32,7 @@ def create_app() -> FastAPI:
         )
         return response
 
-    # ---- auth --------------------------------------------------------------
     def current_user(authorization: Annotated[str | None, Header()] = None) -> StaffUser:
-        """Resolve `Authorization: Bearer <token>` -> StaffUser, or 401."""
         if not authorization:
             raise HTTPException(401, "Missing bearer token", {"WWW-Authenticate": "Bearer"})
         scheme, _, token = authorization.partition(" ")
@@ -53,19 +44,16 @@ def create_app() -> FastAPI:
         return user
 
     def current_merchant(user: Annotated[StaffUser, Depends(current_user)]) -> str:
-        """Fail closed: a valid token with no merchant gets nothing (403)."""
         if user.merchant_id is None:
             raise HTTPException(403, "Token is not scoped to a merchant")
         return user.merchant_id
 
     def owned_order(order_id: int, merchant: str) -> Order:
-        """Unknown and foreign orders look identical (404): no existence oracle."""
         order = orders.get(order_id)
         if order is None or order.merchant != merchant:
             raise HTTPException(404, "Order not found")
         return order
 
-    # ---- endpoints ---------------------------------------------------------
     @app.get("/healthz")
     def healthz() -> dict:
         return {"ok": True}
@@ -87,8 +75,6 @@ def create_app() -> FastAPI:
 
     @app.get("/orders/lookup")
     def lookup_order(merchant: Annotated[str, Depends(current_merchant)], id: int) -> dict:
-        # LEGACY CONTRACT (intentional): always HTTP 200. Failure is signalled
-        # only in the body. Foreign orders are reported exactly like missing ones.
         order = orders.get(id)
         if order is None or order.merchant != merchant:
             return {"status": False, "message": "Order not found"}

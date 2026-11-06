@@ -8,21 +8,17 @@ version = "0.1.0"
 description = "Multi-tenant order-support agents for ShopHub: LangGraph orchestrator + A2A orders sub-agent"
 requires-python = ">=3.11"
 dependencies = [
-    # Agent framework (the team's stack)
     "langgraph>=1.0,<2",
     "langchain-core>=1.0,<2",
     "langgraph-checkpoint-postgres>=3.0,<4",
     "langgraph-checkpoint-sqlite>=3.0,<4",
     "psycopg[binary,pool]>=3.2,<4",
-    # Google A2A protocol SDK (protocol v0.3, JSON-RPC 2.0 transport)
     "a2a-sdk[http-server,postgresql,sqlite]==0.3.26",
-    # HTTP
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "httpx>=0.27,<0.29",
     "pydantic>=2.7,<3",
     "pydantic-settings>=2.3",
-    # The one real LLM provider (optional at runtime; fake mode needs no key)
     "langchain-anthropic>=0.3",
 ]
 

@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Run the 3 services as separate processes WITHOUT docker (SQLite persistence).
-# Ctrl+C stops all of them.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 export LLM_PROVIDER="${LLM_PROVIDER:-fake}" STORE_API_URL=http://localhost:8000

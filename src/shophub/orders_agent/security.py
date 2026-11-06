@@ -1,19 +1,3 @@
-"""Authentication and tenant scoping for the Orders Agent's A2A endpoint.
-
-1. StoreAuthMiddleware - every JSON-RPC call must carry a bearer token. We do
-   not decode or trust it ourselves: we ask the store's /auth/me (the source of
-   truth) with that exact token. No merchant -> 403 (fail closed, R4c).
-   The Agent Card stays public, as A2A discovery requires.
-
-2. IdentityContextBuilder - copies the verified identity into the A2A
-   ServerCallContext so the executor and request handler can read it.
-
-3. TenantScopedRequestHandler - A2A tasks are addressable by id (tasks/get,
-   message/send with taskId, tasks/cancel). Each task is stamped with its owning
-   merchant on creation; any access by another merchant gets "task not found"
-   (same answer as a non-existent id, so ids cannot be probed).
-"""
-
 import logging
 from typing import Any, AsyncGenerator
 
@@ -50,11 +34,9 @@ def _rpc_error(status: int, message: str) -> JSONResponse:
 
 
 class StoreAuthMiddleware:
-    """Pure ASGI middleware (streaming-safe, unlike BaseHTTPMiddleware)."""
-
     def __init__(self, app, get_store):
         self.app = app
-        self.get_store = get_store  # callable -> StoreClient (created in lifespan)
+        self.get_store = get_store
 
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http" or scope["path"] in PUBLIC_PATHS:
@@ -66,7 +48,7 @@ class StoreAuthMiddleware:
         if not token:
             return await _rpc_error(401, "Missing bearer token")(scope, receive, send)
 
-        bearer_token.set(token)  # forwarded unchanged to the store
+        bearer_token.set(token)
         store: StoreClient = self.get_store()
         try:
             me = await store.whoami()
@@ -85,7 +67,7 @@ class StoreAuthMiddleware:
 
 class IdentityContextBuilder(DefaultCallContextBuilder):
     def build(self, request: Request) -> ServerCallContext:
-        ctx = super().build(request)  # includes state["headers"]
+        ctx = super().build(request)
         ctx.state["identity"] = request.scope.get(IDENTITY_SCOPE_KEY)
         return ctx
 
@@ -97,7 +79,7 @@ class TenantScopedRequestHandler(DefaultRequestHandler):
         identity: Identity | None = context.state.get("identity") if context else None
         task = await self.task_store.get(task_id, context)
         if task is None:
-            return  # SDK will answer "task not found" itself
+            return
         owner = (task.metadata or {}).get(OWNER_KEY)
         if identity is None or owner != identity.merchant_id:
             log.warning("cross-tenant task access blocked", extra={"fields": {"task_id": task_id}})

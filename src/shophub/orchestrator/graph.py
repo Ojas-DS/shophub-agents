@@ -1,19 +1,3 @@
-"""The orchestrator's LangGraph (R1).
-
-  START ─┬─(a remote task is waiting for this user's reply)──► resume_remote ─┬─► END
-         │                                                                     └─(reply was not a
-         │                                                                        decision)─► agent
-         └─────────────────────────────────────────────────────────────────────────────► agent
-  agent ──(tool call ask_<agent>)──► call_agents ──(answer)──► agent ──► END
-                                          └──(remote task input-required)──► END  (proposal shown)
-
-State is kept minimal: the message history plus `pending`, a pointer to a remote
-A2A task in `input-required` state. The orchestrator never interprets a proposal
-or a decision - it only knows the generic A2A rule "if a remote task is waiting
-for input, the user's next message goes to that task". That keeps human-in-the-loop
-inside the agent that owns the action, so any future agent works unchanged.
-"""
-
 import json
 import uuid
 from typing import Any, Literal, TypedDict
@@ -46,24 +30,21 @@ class OrchestratorState(MessagesState):
 
 
 def context_id_for(config: RunnableConfig) -> str:
-    """Stable A2A contextId per conversation, derived from the (tenant-scoped) thread id."""
     return str(uuid.uuid5(uuid.NAMESPACE_URL, config["configurable"]["thread_id"]))
 
 
 def build_orchestrator_graph(model: BaseChatModel, registry: AgentRegistry, checkpointer: BaseCheckpointSaver):
-
     async def emit(name: str, data: dict[str, Any]) -> None:
-        await adispatch_custom_event(name, data)  # surfaces in astream_events -> SSE
+        await adispatch_custom_event(name, data)
 
     async def agent(state: OrchestratorState) -> dict:
-        await registry.ensure_discovered()  # agents may have started after us
+        await registry.ensure_discovered()
         identity = current_identity.get()
         system = SystemMessage(ORCHESTRATOR_SYSTEM_PROMPT.format(
             merchant_name=identity.merchant_name if identity else "your store",
             agents=describe_agents(registry.agents),
         ))
         llm = model.bind_tools(registry.tools()) if registry.agents else model
-        # The tag lets the chat API stream only THIS model's tokens to the user.
         response = await llm.ainvoke([system, *state["messages"]], config={"tags": [ANSWER_TAG]})
         return {"messages": [response]}
 
@@ -93,7 +74,7 @@ def build_orchestrator_graph(model: BaseChatModel, registry: AgentRegistry, chec
                                          context_id=context_id_for(config), on_event=relay)
             await emit("tool_finished", {"tool": call["name"], "agent": remote.name, "state": result.state})
 
-            text = redact_pii(result.text)  # untrusted: re-redact anything crossing the boundary
+            text = redact_pii(result.text)
             if result.state == "input-required" and result.task_id:
                 pending = PendingTask(agent_tool=call["name"], task_id=result.task_id,
                                       context_id=result.context_id or context_id_for(config),
@@ -109,7 +90,6 @@ def build_orchestrator_graph(model: BaseChatModel, registry: AgentRegistry, chec
                                        tool_call_id=call["id"], name=call["name"]))
 
         if pending:
-            # Show the proposal verbatim (no LLM rewording of amounts/ids) and stop the turn.
             out.append(AIMessage(proposal_text))
         return {"messages": out, "pending": pending}
 
@@ -117,7 +97,6 @@ def build_orchestrator_graph(model: BaseChatModel, registry: AgentRegistry, chec
         return END if state.get("pending") else "agent"
 
     async def resume_remote(state: OrchestratorState) -> dict:
-        """Forward the user's raw reply to the waiting remote task. No LLM involved."""
         pending = state["pending"]
         remote = registry.get(pending["agent_tool"])
         reply = next(m.text for m in reversed(state["messages"]) if isinstance(m, HumanMessage))
@@ -137,12 +116,10 @@ def build_orchestrator_graph(model: BaseChatModel, registry: AgentRegistry, chec
                                      task_id=pending["task_id"], on_event=relay)
         await emit("tool_finished", {"tool": pending["agent_tool"], "agent": remote.name, "state": result.state})
 
-        if result.state == "input-required":  # agent asked again; keep waiting
+        if result.state == "input-required":
             return {"messages": [AIMessage(redact_pii(result.text))], "pending": pending}
         decision = (result.data.get("outcome") or {}).get("decision")
         if decision == "unclear":
-            # The reply was not an approve/reject: the proposal was discarded by the
-            # owning agent, and the message is treated as a new request.
             await emit("notice", {"text": redact_pii(result.text)})
             return {"pending": None, "messages": []}
         text = result.text if result.state == "completed" else f"Nothing was changed: {result.text}"
@@ -150,7 +127,6 @@ def build_orchestrator_graph(model: BaseChatModel, registry: AgentRegistry, chec
 
     def route_after_resume(state: OrchestratorState) -> Literal["agent", "__end__"]:
         last = state["messages"][-1]
-        # If resume produced no new AI message (unclear decision), answer the new request.
         return "agent" if isinstance(last, HumanMessage) else END
 
     g = StateGraph(OrchestratorState)

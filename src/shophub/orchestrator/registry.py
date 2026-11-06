@@ -1,16 +1,3 @@
-"""Agent discovery + A2A client (R2).
-
-The orchestrator knows NOTHING about the orders agent at build time - no import,
-no hard-coded skills. It is given a list of base URLs (AGENT_CARD_URLS), fetches
-`<url>/.well-known/agent-card.json` from each, and turns every discovered agent
-into one delegation tool `ask_<agent_name>(request)` whose description comes
-from the card's description and skills. Adding a payments agent later = adding
-one URL to the env var.
-
-Calls go out as A2A `message/stream` (JSON-RPC 2.0 over HTTP + SSE), carrying
-the caller's own bearer token and the correlation id - nothing else.
-"""
-
 import logging
 import re
 import uuid
@@ -56,7 +43,7 @@ class RemoteAgent:
 
 @dataclass
 class RemoteResult:
-    state: str                       # A2A TaskState value: completed, input-required, failed, ...
+    state: str
     text: str
     data: dict[str, Any] = field(default_factory=dict)
     task_id: str | None = None
@@ -79,12 +66,11 @@ class AgentRegistry:
         self._card_urls = card_urls
         self._agents: dict[str, RemoteAgent] = {}
 
-    # ---- discovery -------------------------------------------------------------
     async def discover(self) -> list[RemoteAgent]:
         for url in self._card_urls:
             try:
                 card = await A2ACardResolver(self._http, url).get_agent_card()
-            except Exception as exc:  # noqa: BLE001 - one bad agent must not stop the others
+            except Exception as exc:
                 log.warning("agent discovery failed", extra={"fields": {"url": url, "error": str(exc)}})
                 continue
             agent = RemoteAgent(card=card, card_url=url)
@@ -105,8 +91,7 @@ class AgentRegistry:
         return self._agents.get(tool_name)
 
     def tools(self) -> list[StructuredTool]:
-        """Schema-only tools for the LLM; the graph's call_agents node executes them."""
-        async def _schema_only(request: str) -> str:  # pragma: no cover
+        async def _schema_only(request: str) -> str:
             raise RuntimeError("executed by the orchestrator graph")
 
         return [
@@ -115,23 +100,20 @@ class AgentRegistry:
             for a in self.agents
         ]
 
-    # ---- calling ---------------------------------------------------------------
     async def send(self, agent: RemoteAgent, text: str, *, context_id: str, task_id: str | None = None,
                    on_event: EventCallback | None = None) -> RemoteResult:
-        """Send one A2A message and stream until the task is final or needs input."""
         factory = ClientFactory(ClientConfig(httpx_client=self._http, streaming=bool(agent.card.capabilities.streaming)))
         client = factory.create(agent.card)
         message = Message(
             role=Role.user, message_id=uuid.uuid4().hex, context_id=context_id, task_id=task_id,
             parts=[Part(root=TextPart(text=text))],
         )
-        # The ONLY credential sent is the caller's own token (R3).
         call_ctx = ClientCallContext(state={"http_kwargs": {"headers": outbound_headers()}})
 
         last_task: Task | None = None
         try:
             async for event in client.send_message(message, context=call_ctx):
-                if isinstance(event, Message):  # agent replied without creating a task
+                if isinstance(event, Message):
                     body, data = _split_parts(event.parts)
                     return RemoteResult("completed", body, data, None, event.context_id)
                 task, update = event

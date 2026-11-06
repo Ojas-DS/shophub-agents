@@ -1,5 +1,3 @@
-"""Structured JSON logs with the correlation id on every line (stretch goal S3)."""
-
 import json
 import logging
 import sys
@@ -22,7 +20,6 @@ class JsonFormatter(logging.Formatter):
             "msg": record.getMessage(),
             "correlation_id": correlation_id.get(),
         }
-        # Extra structured fields: logger.info("x", extra={"fields": {...}})
         fields = getattr(record, "fields", None)
         if isinstance(fields, dict):
             payload.update(fields)
@@ -37,5 +34,4 @@ def setup_logging(service: str, level: str = "INFO") -> None:
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level)
-    # httpx logs every request URL at INFO; keep the noise down.
     logging.getLogger("httpx").setLevel(logging.WARNING)

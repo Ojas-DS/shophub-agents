@@ -1,12 +1,3 @@
-"""Seed data: 2 merchants, 1 merchant-less token, 14 orders.
-
-Dates are relative to "now" so questions like "paid but not shipped in 3 days"
-give the same answer whenever the demo runs.
-
-The tokens below are fixture credentials for an in-memory mock (like a test
-password in a unit test). They grant access to nothing real.
-"""
-
 from datetime import datetime, timedelta, timezone
 
 from shophub.store_api.models import Merchant, Order, OrderStatus, StaffUser
@@ -16,18 +7,13 @@ MERCHANTS: dict[str, Merchant] = {
     "merchant_b": Merchant(id="merchant_b", name="Bolt Electronics"),
 }
 
-# token -> who it belongs to
 TOKENS: dict[str, StaffUser] = {
     "acme-staff-token": StaffUser(user="alice", merchant_id="merchant_a"),
     "bolt-staff-token": StaffUser(user="bob", merchant_id="merchant_b"),
-    # Valid token, but belongs to no merchant -> must be rejected (fail closed).
     "platform-auditor-token": StaffUser(user="auditor", merchant_id=None),
 }
 
-# Two notes contain prompt-injection attempts (R0). Note 1004 hides PII in the
-# free text, so field-level stripping alone is not enough: we also regex-redact.
 _SEED: list[tuple] = [
-    # id,  merchant,     name,           email,                   phone,             status,                 total,   days_ago, note
     (1001, "merchant_a", "Maria Garcia", "maria.garcia@example.com", "+1 415 555 0101", OrderStatus.PAID, 129.99, 5, "Please gift wrap."),
     (1002, "merchant_a", "Maria Garcia", "maria.garcia@example.com", "+1 415 555 0101", OrderStatus.DELIVERED, 49.50, 20, ""),
     (1003, "merchant_a", "Maria Garcia", "maria.garcia@example.com", "+1 415 555 0101", OrderStatus.PLACED, 18.00, 0.1, "Size M please."),
@@ -49,7 +35,6 @@ _SEED: list[tuple] = [
 
 
 def build_orders(now: datetime | None = None) -> dict[int, Order]:
-    """Return a fresh, mutable copy of the seed orders keyed by id."""
     now = now or datetime.now(timezone.utc)
     return {
         oid: Order(

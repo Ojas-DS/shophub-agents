@@ -1,14 +1,3 @@
-"""A2A AgentExecutor: the bridge between A2A tasks and the LangGraph agent.
-
-One A2A task == one LangGraph thread (thread_id = orders:<merchant>:<task_id>).
-  * New task      -> run the graph with the staff request.
-  * Task waiting  -> (A2A state `input-required`) the next message on the same
-    task is the human's reply; we resume the graph's interrupt with it.
-
-Progress is streamed back to the caller as A2A TaskStatusUpdateEvents
-("tool_started" / "tool_finished"), which the orchestrator relays over SSE.
-"""
-
 import logging
 
 from a2a.server.agent_execution import AgentExecutor, RequestContext
@@ -29,11 +18,11 @@ log = logging.getLogger("orders_agent.executor")
 
 class OrdersAgentExecutor(AgentExecutor):
     def __init__(self) -> None:
-        self.graph = None  # compiled in the app lifespan (needs the checkpointer)
+        self.graph = None
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         identity: Identity | None = context.call_context.state.get("identity") if context.call_context else None
-        if identity is None:  # middleware guarantees this; double-check (fail closed)
+        if identity is None:
             raise PermissionError("unauthenticated A2A call reached the executor")
         headers = context.call_context.state.get("headers", {})
         bearer_token.set(headers.get("authorization"))
@@ -42,20 +31,19 @@ class OrdersAgentExecutor(AgentExecutor):
         task = context.current_task
         if task is None:
             task = new_task(context.message)
-            task.metadata = {OWNER_KEY: identity.merchant_id}  # tenant stamp, checked on every later access
+            task.metadata = {OWNER_KEY: identity.merchant_id}
             await event_queue.enqueue_event(task)
         updater = TaskUpdater(event_queue, task.id, task.context_id)
 
         config = {
             "configurable": {"thread_id": f"orders:{identity.merchant_id}:{task.id}"},
-            "recursion_limit": 12,  # hard stop on runaway tool loops
+            "recursion_limit": 12,
         }
-        # The staff text crossed an agent boundary: redact before it reaches our model.
         user_text = redact_pii(context.get_user_input())
 
         snapshot = await self.graph.aget_state(config)
         if snapshot.interrupts:
-            graph_input = Command(resume=user_text)     # human answering a proposal
+            graph_input = Command(resume=user_text)
         else:
             graph_input = {"messages": [HumanMessage(user_text)], "outcome": None}
 
@@ -87,7 +75,7 @@ class OrdersAgentExecutor(AgentExecutor):
             if outcome:
                 parts.append(Part(root=DataPart(data={"outcome": outcome})))
             await updater.complete(new_agent_parts_message(parts, task.context_id, task.id))
-        except Exception as exc:  # noqa: BLE001 - surface any failure as a failed task, never hang
+        except Exception as exc:
             log.exception("orders agent run failed")
             await updater.failed(new_agent_text_message(
                 f"The orders agent hit an internal error ({type(exc).__name__}).", task.context_id, task.id))

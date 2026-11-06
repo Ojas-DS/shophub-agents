@@ -1,5 +1,3 @@
-"""`python -m shophub.orders_agent` - run the Orders Agent (A2A server) on :8001."""
-
 import os
 
 import uvicorn
