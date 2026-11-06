@@ -8,17 +8,14 @@ from shophub.llm import fake
 from shophub.store_api.app import create_app as create_store
 from shophub.testing import running_stack, make_test_settings
 
-# Tests must never need a key or the network.
 os.environ.pop("ANTHROPIC_API_KEY", None)
 
-ACME = "Bearer acme-staff-token"        # merchant_a  (Acme Outfitters)
-BOLT = "Bearer bolt-staff-token"        # merchant_b  (Bolt Electronics)
-AUDITOR = "Bearer platform-auditor-token"  # valid token, no merchant
+ACME = "Bearer acme-staff-token"
+BOLT = "Bearer bolt-staff-token"
+AUDITOR = "Bearer platform-auditor-token"
 
 
 class RecordingASGI:
-    """Wraps the store app and records the Authorization header of every call."""
-
     def __init__(self, app):
         self.app = app
         self.auth_headers: list[str | None] = []

@@ -1,5 +1,3 @@
-"""R7 - conversation state (including a pending approval) survives a restart."""
-
 from conftest import ACME, chat, store_status
 
 from shophub.store_api.app import create_app as create_store
@@ -12,12 +10,11 @@ async def test_pending_approval_survives_restart(tmp_path):
         orders_agent_db_url=f"sqlite:///{tmp_path}/orders.db",
         a2a_task_store_url=f"sqlite+aiosqlite:///{tmp_path}/a2a.db",
     )
-    store = create_store()  # the store keeps running; both agents restart
+    store = create_store()
 
     async with running_stack(settings, store_app=store) as s:
         r = await chat(s.client, ACME, "Refund order 1042", thread_id="restart-demo")
         assert r.awaiting_approval
-    # ---- both agent processes are gone; only the databases remain ----
 
     async with running_stack(settings, store_app=store) as s:
         hist = (await s.client.get("/threads/restart-demo", headers={"Authorization": ACME})).json()

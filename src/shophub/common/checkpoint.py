@@ -1,10 +1,3 @@
-"""R7 - one factory for the LangGraph checkpointer, chosen by URL.
-
-postgresql://...  -> AsyncPostgresSaver   (docker compose / production)
-sqlite:///path    -> AsyncSqliteSaver     (local dev without docker, restart test)
-memory            -> InMemorySaver        (fast unit tests)
-"""
-
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import AsyncIterator
@@ -23,7 +16,7 @@ async def make_checkpointer(url: str) -> AsyncIterator[BaseCheckpointSaver]:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
         async with AsyncPostgresSaver.from_conn_string(url) as saver:
-            await saver.setup()  # idempotent: creates/migrates checkpoint tables
+            await saver.setup()
             yield saver
         return
 

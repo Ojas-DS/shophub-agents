@@ -1,5 +1,3 @@
-"""`python -m shophub.store_api` - run the mock store on :8000."""
-
 import os
 
 import uvicorn

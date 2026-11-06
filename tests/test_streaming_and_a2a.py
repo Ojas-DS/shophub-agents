@@ -1,5 +1,3 @@
-"""R6 streaming events, R2 agent card / discovery, R1 legacy envelope end to end."""
-
 import uuid
 
 from conftest import ACME, chat
@@ -12,9 +10,9 @@ async def test_sse_event_order(stack):
     names = r.names
     assert names[0] == "meta" and names[-1] == "final"
     assert names.index("tool_started") < names.index("remote_status") < names.index("tool_finished")
-    assert names.count("token") > 3  # answer streamed in pieces, not one blob
+    assert names.count("token") > 3
     assert "".join(d["text"] for e, d in r.events if e == "token") == r.final
-    assert "#1001" in r.final and "#1042" in r.final and "#1006" not in r.final  # 1006 is only 1 day old
+    assert "#1001" in r.final and "#1042" in r.final and "#1006" not in r.final
 
 
 async def test_agent_card_is_public_and_describes_skills(stack):
@@ -48,7 +46,6 @@ async def test_a2a_jsonrpc_direct_call_works(stack):
 
 
 async def test_legacy_envelope_is_reported_as_failure(stack):
-    # Store answers HTTP 200 {"status": false}; the assistant must not pretend it found it.
     r = await chat(stack.client, ACME, "What is the status of order 5555?")
     assert "not found" in r.final.lower()
     assert "5555" in r.final

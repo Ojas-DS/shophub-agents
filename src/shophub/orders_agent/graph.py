@@ -1,20 +1,3 @@
-"""The Orders Agent's LangGraph: a tool-calling loop with a human approval gate.
-
-            ┌──────────── read tool results ────────────┐
-            ▼                                            │
-  START ─► agent ──(list_orders / lookup_order)──► read_tools
-            │
-            ├──(refund_order / cancel_order)──► approval_gate ──► END
-            │                                     │  interrupt(): pause until a
-            └──(plain answer)──► END              │  human replies approve/reject
-                                                  ▼
-                                          execute or discard
-
-Human-in-the-loop (R5) lives HERE, inside the agent that owns the action, not in
-the chat API. Any future agent (payments, invoices, addresses) brings its own gate
-and the orchestrator needs no changes - it only sees the A2A `input-required` state.
-"""
-
 import json
 from typing import Any, Literal
 
@@ -39,7 +22,6 @@ ACTIONS: dict[str, dict[str, Any]] = {
 
 
 class OrdersState(MessagesState):
-    # Minimal extra state: the outcome of an approval, reported back over A2A.
     outcome: dict[str, Any] | None
 
 
@@ -74,9 +56,8 @@ def build_orders_graph(model: BaseChatModel, store: StoreClient, checkpointer: B
         return "read_tools"
 
     async def build_proposal(name: str, args: dict[str, Any]) -> dict[str, Any]:
-        """Validate against LIVE store data (caller's token) and describe the change."""
         spec = ACTIONS[name]
-        order = await store.lookup_order(int(args["order_id"]))  # raises StoreError (legacy envelope handled)
+        order = await store.lookup_order(int(args["order_id"]))
         status = OrderStatus(order["status"])
         if status not in spec["allowed"]:
             allowed = ", ".join(sorted(s.value for s in spec["allowed"]))
@@ -101,16 +82,12 @@ def build_orders_graph(model: BaseChatModel, store: StoreClient, checkpointer: B
     async def approval_gate(state: OrdersState) -> dict:
         calls = state["messages"][-1].tool_calls
         call = next(c for c in calls if c["name"] in ACTION_TOOLS)
-        # Only one action per approval; every other call gets an explicit answer.
         skipped = [
             ToolMessage(json.dumps({"ok": False, "error": "Only one action can be proposed at a time."}),
                         tool_call_id=c["id"], name=c["name"])
             for c in calls if c["id"] != call["id"]
         ]
 
-        # NOTE: on resume LangGraph re-runs this node from the top, so the proposal
-        # is rebuilt from live data with the approver's token. If the order changed
-        # meanwhile (e.g. already refunded) we refuse instead of executing stale intent.
         try:
             proposal = await build_proposal(call["name"], call["args"])
         except StoreError as exc:
@@ -121,8 +98,6 @@ def build_orders_graph(model: BaseChatModel, store: StoreClient, checkpointer: B
                 "outcome": {"decision": "invalid", "error": exc.message},
             }
 
-        # ---- PAUSE: first pass returns the proposal to the caller (A2A input-required).
-        # ---- On resume, interrupt() returns the human's raw reply text.
         reply = interrupt(proposal)
         decision = parse_decision(str(reply))
 

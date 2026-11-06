@@ -1,5 +1,3 @@
-"""R5 - refund/cancel produce a proposal; only an explicit approval executes (mandatory test)."""
-
 from conftest import ACME, chat, store_status
 
 
@@ -14,7 +12,7 @@ async def test_refund_produces_proposal_and_does_not_execute(stack):
     }
     for fragment in ("#1042", "Acme Outfitters", "PAID -> REFUNDED", "$89.00"):
         assert fragment in r.final
-    assert await store_status(stack, 1042) == "PAID"  # nothing executed
+    assert await store_status(stack, 1042) == "PAID"
 
 
 async def test_approve_executes(stack):
@@ -29,7 +27,6 @@ async def test_reject_does_not_execute(stack):
     r = await chat(stack.client, ACME, "No, reject that", thread_id="h3")
     assert "rejected" in r.final.lower() and "not changed" in r.final.lower()
     assert await store_status(stack, 1005) == "PLACED"
-    # The proposal is gone: a later "approve" must not resurrect it.
     await chat(stack.client, ACME, "approve", thread_id="h3")
     assert await store_status(stack, 1005) == "PLACED"
 
@@ -44,13 +41,13 @@ async def test_cancel_approved_in_natural_language(stack):
 async def test_unrelated_reply_discards_proposal_and_answers_new_question(stack):
     await chat(stack.client, ACME, "Refund order 1001", thread_id="h5")
     r = await chat(stack.client, ACME, "Actually, show me order 1006", thread_id="h5")
-    assert r.first("notice") is not None            # proposal discarded, user told
-    assert "#1006" in r.final                       # and the new question answered
+    assert r.first("notice") is not None
+    assert "#1006" in r.final
     assert await store_status(stack, 1001) == "PAID"
 
 
 async def test_invalid_transition_gets_no_proposal(stack):
-    r = await chat(stack.client, ACME, "Cancel order 1002")  # DELIVERED -> cannot cancel
+    r = await chat(stack.client, ACME, "Cancel order 1002")
     assert r.first("proposal") is None and not r.awaiting_approval
     assert "DELIVERED" in r.final
     assert await store_status(stack, 1002) == "DELIVERED"
@@ -63,7 +60,6 @@ async def test_unknown_order_gets_no_proposal(stack):
 
 async def test_approval_revalidates_against_live_state(stack):
     await chat(stack.client, ACME, "Refund order 1042", thread_id="h6")
-    # Someone refunds it in the admin panel meanwhile.
     await stack.http.post("http://store/orders/refund", json={"id": 1042}, headers={"Authorization": ACME})
     r = await chat(stack.client, ACME, "approve", thread_id="h6")
     assert "can only be refunded" in r.final

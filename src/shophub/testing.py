@@ -1,12 +1,3 @@
-"""Run the whole system in one process for tests and evals - no ports, no keys.
-
-Each service is a real ASGI app; an httpx transport routes requests by host name
-to the right app. So the orchestrator still discovers the orders agent from its
-Agent Card and calls it with real A2A JSON-RPC over (in-memory) HTTP, and the
-orders agent still calls the store over HTTP with the forwarded token. Nothing
-is imported across the service boundary at call time.
-"""
-
 import asyncio
 import contextlib
 import contextvars
@@ -34,17 +25,14 @@ class HostRoutingTransport(httpx.AsyncBaseTransport):
         transport = self._transports.get(request.url.host)
         if transport is None:
             raise httpx.ConnectError(f"no in-process app for host {request.url.host!r}", request=request)
-        # Run the callee in an EMPTY context, like a separate process: nothing
-        # (bearer token, identity, LangChain callbacks) leaks across the "network"
-        # except what is actually sent in the HTTP request.
         return await asyncio.create_task(transport.handle_async_request(request), context=contextvars.Context())
 
 
 @dataclass
 class Stack:
     settings: Settings
-    http: httpx.AsyncClient          # what services use to reach each other
-    client: httpx.AsyncClient        # what a test uses to talk to the chat API
+    http: httpx.AsyncClient
+    client: httpx.AsyncClient
     store_app: object
 
 
@@ -64,13 +52,12 @@ def make_test_settings(**overrides) -> Settings:
 
 @contextlib.asynccontextmanager
 async def running_stack(settings: Settings | None = None, store_app=None) -> AsyncIterator[Stack]:
-    """Start store + orders agent + orchestrator in-process, wired over HTTP."""
     from shophub.orchestrator.api import create_app as create_orchestrator
     from shophub.orders_agent.server import create_app as create_orders_agent
     from shophub.store_api.app import create_app as create_store
 
     settings = settings or make_test_settings()
-    store_app = store_app or create_store()  # pass the same one to simulate a restart of the agents only
+    store_app = store_app or create_store()
     transport = HostRoutingTransport({"store": store_app})
     async with httpx.AsyncClient(transport=transport, timeout=30) as http:
         orders_app = create_orders_agent(settings, http=http)

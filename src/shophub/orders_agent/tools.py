@@ -1,14 +1,3 @@
-"""Tool schemas the orders agent's model can call.
-
-Read tools (list_orders, lookup_order) execute immediately and return JSON.
-Action tools (refund_order, cancel_order) are schema-only: the graph routes
-those calls to the approval gate instead of running them (see graph.py). The
-model believes it is "refunding"; in reality it can only ever *propose*.
-
-Every tool returns {"ok": true, ...} or {"ok": false, "error": "..."} so errors
-reach the model as data it can explain, rather than as exceptions (task §5).
-"""
-
 import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -76,7 +65,7 @@ def build_tools(store: StoreClient, guardrails_enabled: bool = True) -> list[Bas
             return _err(exc.message, exc.code)
         return _ok(order=safe_order(order, guardrails_enabled))
 
-    async def _never_called(**_: Any) -> str:  # pragma: no cover - graph intercepts these
+    async def _never_called(**_: Any) -> str:
         raise RuntimeError("Action tools are executed only by the approval gate")
 
     return [

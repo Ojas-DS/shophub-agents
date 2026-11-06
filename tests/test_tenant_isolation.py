@@ -1,5 +1,3 @@
-"""R3 - credential forwarding and tenant isolation (mandatory test)."""
-
 import uuid
 
 from conftest import ACME, AUDITOR, BOLT, chat, store_status
@@ -11,7 +9,6 @@ async def test_merchant_a_cannot_see_merchant_b_order_by_id(stack):
     r = await chat(stack.client, ACME, "Show me order 2001")
     assert r.status == 200
     assert "not found" in r.final.lower()
-    # Nothing about B's order leaked: not the customer, not the amount.
     assert "Rossi" not in r.final and "999" not in r.final
     assert not any("Rossi" in t for t in fake.TRANSCRIPT)
 
@@ -24,7 +21,6 @@ async def test_merchant_a_cannot_refund_merchant_b_order(stack):
 
 
 async def test_customer_search_only_returns_own_tenant(stack):
-    # Both merchants have a customer called Maria.
     r = await chat(stack.client, ACME, "What did customer Maria order last?")
     assert "Maria Garcia" in r.final and "Rossi" not in r.final
     r = await chat(stack.client, BOLT, "What did customer Maria order last?")
@@ -40,7 +36,6 @@ async def test_listing_never_includes_foreign_orders(stack):
 async def test_token_is_forwarded_unchanged_on_every_hop(stack):
     stack.recorder.auth_headers.clear()
     await chat(stack.client, ACME, "Which paid orders have not shipped in 3 days?")
-    # chat API /auth/me + orders agent /auth/me + /orders: all with the exact caller token
     assert len(stack.recorder.auth_headers) >= 3
     assert set(stack.recorder.auth_headers) == {ACME}
     assert "/orders" in stack.recorder.paths
@@ -49,8 +44,7 @@ async def test_token_is_forwarded_unchanged_on_every_hop(stack):
 async def test_token_without_merchant_fails_closed(stack):
     r = await chat(stack.client, AUDITOR, "List all orders")
     assert r.status == 403
-    assert fake.TRANSCRIPT == []  # rejected before any model saw anything
-    # The orders agent fails closed on its own too (defence in depth).
+    assert fake.TRANSCRIPT == []
     rpc = {"jsonrpc": "2.0", "id": 1, "method": "message/send", "params": {"message": {
         "role": "user", "messageId": uuid.uuid4().hex, "parts": [{"kind": "text", "text": "list orders"}]}}}
     resp = await stack.http.post("http://orders-agent/", json=rpc, headers={"Authorization": AUDITOR})
@@ -81,7 +75,6 @@ async def test_other_merchant_cannot_touch_a_pending_a2a_task(stack):
 
 async def test_conversation_threads_are_scoped_per_merchant(stack):
     await chat(stack.client, ACME, "Refund order 1042", thread_id="shared")
-    # Same thread id, other merchant: they get their own empty thread, not A's proposal.
     r = await chat(stack.client, BOLT, "approve", thread_id="shared")
     assert r.first("proposal") is None and "REFUNDED" not in r.final
     assert await store_status(stack, 1042) == "PAID"

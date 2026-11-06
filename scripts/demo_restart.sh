@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# R7 demo: start a conversation, restart the agents, continue it.
-# Requires `docker compose up -d` to be running.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 THREAD="restart-$(date +%s)"

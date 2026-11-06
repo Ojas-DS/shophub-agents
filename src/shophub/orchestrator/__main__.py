@@ -1,5 +1,3 @@
-"""`python -m shophub.orchestrator` - run the chat API / orchestrator on :8002."""
-
 import os
 
 import uvicorn

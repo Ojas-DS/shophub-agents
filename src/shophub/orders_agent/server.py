@@ -1,12 +1,3 @@
-"""Orders Agent as an A2A server (R2): Agent Card + JSON-RPC 2.0 endpoint.
-
-Routes (served by the a2a-sdk):
-  GET  /.well-known/agent-card.json   public Agent Card (discovery)
-  POST /                              JSON-RPC 2.0: message/send, message/stream,
-                                      tasks/get, tasks/cancel, tasks/resubscribe
-  GET  /healthz                       liveness for docker
-"""
-
 import contextlib
 from typing import AsyncIterator
 
@@ -40,7 +31,6 @@ from shophub.orders_agent.store_client import StoreClient
 
 
 def build_agent_card(public_url: str) -> AgentCard:
-    """The machine-readable description other agents discover us by."""
     return AgentCard(
         name="orders_agent",
         description=(
@@ -86,12 +76,10 @@ def build_agent_card(public_url: str) -> AgentCard:
 def _make_task_store(url: str) -> TaskStore:
     if url == "memory":
         return InMemoryTaskStore()
-    # A2A tasks persist too, so a pending approval survives a restart (R7).
     return DatabaseTaskStore(create_async_engine(url), create_table=True)
 
 
 def create_app(settings: Settings, http: httpx.AsyncClient | None = None) -> Starlette:
-    """Build the ASGI app. `http` lets tests inject an in-process transport."""
     executor = OrdersAgentExecutor()
     task_store = _make_task_store(settings.a2a_task_store_url)
     handler = TenantScopedRequestHandler(agent_executor=executor, task_store=task_store)

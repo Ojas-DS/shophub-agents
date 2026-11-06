@@ -1,13 +1,3 @@
-"""Turn the human's free-text reply to a proposal into approve / reject / unclear.
-
-Deliberately NOT done by the LLM. Approval is a security decision: it must come
-only from the human's own words, and must not be something tool output (e.g. an
-injected customer note) could ever talk a model into. A small deterministic
-parser cannot be prompt-injected, and its behaviour is fully unit-testable.
-
-Anything that is not an unambiguous approval is NOT an approval (fail safe).
-"""
-
 import re
 from typing import Literal
 
@@ -23,7 +13,7 @@ def parse_decision(reply: str) -> Decision:
     if not text:
         return "unclear"
     if _REJECT.search(text):
-        return "reject"          # any refusal signal wins over an approval word
+        return "reject"
     if _APPROVE.search(text) and not _NEGATION.search(text):
         return "approve"
     return "unclear"

@@ -1,23 +1,3 @@
-"""Chat API (R6): one natural-language endpoint, streamed over Server-Sent Events.
-
-POST /chat   {"message": "...", "thread_id": "optional"}   Authorization: Bearer <token>
-
-There is deliberately no `decision` / `approve` field: approving a proposal is
-just a chat message ("approve", "yes go ahead", "reject"). Intent comes from the
-user's words; the owning agent decides what they mean.
-
-SSE events, in order of appearance:
-  meta            {thread_id, correlation_id}
-  tool_started    orchestrator is delegating to an agent (A2A call begins)
-  remote_status   progress inside the remote agent (its tool_started / tool_finished)
-  tool_finished   A2A call returned (with final task state)
-  proposal        an action needs human approval (which order, merchant, change, amount)
-  notice          informational (e.g. an unanswered proposal was discarded)
-  token           a chunk of the assistant's answer as the model produces it
-  final           {text, awaiting_approval}
-  error           {message}
-"""
-
 import contextlib
 import json
 import logging
@@ -57,13 +37,12 @@ def sse(event: str, data: Any) -> str:
 
 
 def create_app(settings: Settings, http: httpx.AsyncClient | None = None) -> FastAPI:
-
     @contextlib.asynccontextmanager
     async def lifespan(app: FastAPI):
         async with contextlib.AsyncExitStack() as stack:
             client = http or await stack.enter_async_context(httpx.AsyncClient(timeout=settings.http_timeout_s))
             registry = AgentRegistry(client, settings.agent_card_url_list)
-            await registry.discover()  # non-fatal; retried lazily on the first chat turn
+            await registry.discover()
             checkpointer = await stack.enter_async_context(make_checkpointer(settings.orchestrator_db_url))
             app.state.http = client
             app.state.registry = registry
@@ -73,7 +52,6 @@ def create_app(settings: Settings, http: httpx.AsyncClient | None = None) -> Fas
 
     app = FastAPI(title="ShopHub Support Chat (Orchestrator)", version="1.0.0", lifespan=lifespan)
 
-    # ---- auth: validated HERE, before any model call (fail closed, R4c) -------
     async def require_identity(
         request: Request, authorization: Annotated[str | None, Header()] = None
     ) -> Identity:
@@ -99,18 +77,14 @@ def create_app(settings: Settings, http: httpx.AsyncClient | None = None) -> Fas
         return Identity(user=me["user"], merchant_id=me["merchant"]["id"], merchant_name=me["merchant"]["name"])
 
     def scoped_thread(identity: Identity, thread_id: str) -> str:
-        # Threads are namespaced by merchant and user: knowing another user's
-        # thread id gets you an empty conversation, never theirs.
         return f"{identity.merchant_id}:{identity.user}:{thread_id}"
 
-    # ---- endpoints -------------------------------------------------------------
     @app.get("/healthz")
     async def healthz(request: Request) -> dict:
         return {"ok": True, "agents": [a.name for a in request.app.state.registry.agents]}
 
     @app.get("/agents")
     async def agents(request: Request, identity: Annotated[Identity, Depends(require_identity)]) -> list[dict]:
-        """What the orchestrator discovered from Agent Cards."""
         await request.app.state.registry.ensure_discovered()
         return [
             {"name": a.name, "tool": a.tool_name, "url": a.card.url, "card_url": a.card_url,
@@ -121,7 +95,6 @@ def create_app(settings: Settings, http: httpx.AsyncClient | None = None) -> Fas
     @app.get("/threads/{thread_id}")
     async def thread_history(request: Request, thread_id: str,
                              identity: Annotated[Identity, Depends(require_identity)]) -> dict:
-        """Read back a conversation (used to show it survived a restart, R7)."""
         config = {"configurable": {"thread_id": scoped_thread(identity, thread_id)}}
         snap = await request.app.state.graph.aget_state(config)
         msgs = snap.values.get("messages", []) if snap.values else []
@@ -140,7 +113,6 @@ def create_app(settings: Settings, http: httpx.AsyncClient | None = None) -> Fas
         token, cid = bearer_token.get(), correlation_id.get()
 
         async def stream() -> AsyncIterator[str]:
-            # Re-bind request-scoped values inside the streaming task.
             bearer_token.set(token)
             correlation_id.set(cid)
             current_identity.set(identity)
@@ -148,7 +120,6 @@ def create_app(settings: Settings, http: httpx.AsyncClient | None = None) -> Fas
             yield sse("meta", {"thread_id": thread_id, "correlation_id": cid})
             log.info("chat turn", extra={"fields": {"merchant": identity.merchant_id, "thread": thread_id}})
             try:
-                # The user's own text is redacted too: PII never reaches a model (R4b).
                 inputs = {"messages": [HumanMessage(redact_pii(body.message))]}
                 async for ev in graph.astream_events(inputs, config, version="v2"):
                     kind = ev["event"]
@@ -162,7 +133,7 @@ def create_app(settings: Settings, http: httpx.AsyncClient | None = None) -> Fas
                 last = next((m for m in reversed(snap.values["messages"]) if isinstance(m, AIMessage) and m.text), None)
                 yield sse("final", {"text": last.text if last else "",
                                     "awaiting_approval": bool(snap.values.get("pending"))})
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.exception("chat turn failed")
                 yield sse("error", {"message": f"Internal error ({type(exc).__name__}). Nothing was changed."})
 

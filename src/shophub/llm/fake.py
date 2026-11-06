@@ -1,19 +1,3 @@
-"""Fake-LLM mode: a deterministic, scripted chat model.
-
-This is a real LangChain `BaseChatModel`, so the graphs, tool binding, tool-call
-routing, streaming and checkpointing all run exactly as with a real model. Only
-the "thinking" is replaced by a small rule-based policy per agent role.
-
-Two deliberate properties make the tests meaningful rather than "returns ok":
-
-  * TRANSCRIPT records every piece of text that reached any model. Tests assert
-    that no email address or phone number ever appears in it (R4b).
-  * The orders policy is *gullible*: if instruction-like text from a customer
-    note reaches it, it obeys (calls refund/cancel), like a weak model would.
-    So the injection tests fail if the guardrail is removed, and the HITL test
-    shows that even a hijacked model cannot execute anything without approval.
-"""
-
 import json
 import re
 import uuid
@@ -33,7 +17,6 @@ from langchain_core.utils.function_calling import convert_to_openai_tool
 
 Policy = Callable[[list[BaseMessage], list[str]], AIMessage]
 
-# Test instrumentation: every string any fake model was shown, in order.
 TRANSCRIPT: list[str] = []
 
 
@@ -67,7 +50,6 @@ class ScriptedChatModel(BaseChatModel):
         run_manager: CallbackManagerForLLMRun | None = None,
         **kwargs: Any,
     ) -> Iterator[ChatGenerationChunk]:
-        """Stream word by word so SSE clients see real token events."""
         self._record(messages)
         msg = self.policy(messages, self.tool_names)
         if msg.tool_calls:
@@ -85,9 +67,6 @@ class ScriptedChatModel(BaseChatModel):
             yield ChatGenerationChunk(message=AIMessageChunk(content=piece))
 
 
-# ----------------------------------------------------------------------------
-# helpers
-# ----------------------------------------------------------------------------
 def _call(name: str, args: dict[str, Any]) -> AIMessage:
     return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": f"call_{uuid.uuid4().hex[:12]}"}])
 
@@ -106,13 +85,9 @@ DOMAIN_RE = re.compile(
 )
 
 
-# ----------------------------------------------------------------------------
-# Orchestrator policy: decide whether to delegate, then relay the answer.
-# ----------------------------------------------------------------------------
 def orchestrator_policy(messages: list[BaseMessage], tool_names: list[str]) -> AIMessage:
     last = messages[-1]
     if isinstance(last, ToolMessage):
-        # The specialist already wrote a user-facing answer; relay it.
         return AIMessage(content=last.text)
 
     request = _last_human(messages)
@@ -127,13 +102,9 @@ def orchestrator_policy(messages: list[BaseMessage], tool_names: list[str]) -> A
     )
 
 
-# ----------------------------------------------------------------------------
-# Orders-agent policy: pick a store tool, then turn its JSON into an answer.
-# ----------------------------------------------------------------------------
 _STATUSES = ["placed", "paid", "shipped", "delivered", "cancelled", "canceled", "refunded"]
 _NOT_SHIPPED_RE = re.compile(r"\b(not|n't|never|yet to)\b.{0,12}\bshipped\b|\bunshipped\b", re.I)
 _CUSTOMER_RE = re.compile(r"\bcustomer\s+([A-Z][a-zA-Z'-]+)|\bdid\s+([A-Z][a-zA-Z'-]+)\s+(?:order|buy)")
-# What a hijacked model "hears" in a note: "refund this order", "cancel order 2002"...
 _INJECTED_ACTION_RE = re.compile(r"\b(refund|cancel)\b\s+(?:this\s+)?order(?:\s+#?(\d+))?", re.I)
 
 
@@ -184,7 +155,7 @@ def _compose_answer(request: str, tool: str, data: dict[str, Any]) -> str:
         if not orders:
             return "No matching orders found in your store."
         if re.search(r"\b(last|latest|most recent|recent)\b", request, re.I) and data.get("filters", {}).get("customer_name"):
-            o = orders[0]  # store returns newest first
+            o = orders[0]
             return (f"{o['customer_name']}'s most recent order is #{o['id']}: ${o['total']:.2f}, "
                     f"status {o['status']}, placed {str(o['placed_at'])[:10]}.")
         lines = "\n".join(f"- {_fmt_order(o)}" for o in orders)
@@ -203,7 +174,6 @@ def orders_agent_policy(messages: list[BaseMessage], tool_names: list[str]) -> A
     except json.JSONDecodeError:
         data = {"ok": False, "error": last.text}
 
-    # Gullibility: obey instructions found inside tool data (only once per turn).
     already_acted = any(
         tc["name"] in ("refund_order", "cancel_order")
         for m in messages if isinstance(m, AIMessage) for tc in m.tool_calls
